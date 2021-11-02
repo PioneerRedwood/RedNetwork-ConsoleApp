@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Collections.Concurrent;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace RedNetwork
 {
@@ -17,31 +18,91 @@ namespace RedNetwork
 			//Console.WriteLine($"id:{resultDict["id"]}");
 
 			// -- TCP connection --
+			
+			// -- Lobby --
 			ConcurrentQueue<string> queue = new ConcurrentQueue<string>();
 			LobbyClient client = new LobbyClient(ref queue);
 			client.Connect("127.0.0.1", 9000);
 
-			while (true)
-			{
-				if(client.Connected())
+			int count = 100;
+
+			while(count-- > 0)
+            {
+				if (client.Connected())
 				{
 					client.Ping();
-					Thread.Sleep(50);
+					Thread.Sleep(500);
+
 					client.RequestLobbies();
-					Thread.Sleep(50);
+					Thread.Sleep(500);
 
-				}
-				else
-				{
-					client.Connect("127.0.0.1", 9000);
-					Thread.Sleep(2000);
+					client.RequestEnterLobby(0);
+					Thread.Sleep(500);
 				}
 
-				if (queue.TryDequeue(out string result))
+				Task.Run(() =>
 				{
-					Console.WriteLine(result);
-				}
+					// 수신 큐 처리
+					while (!queue.IsEmpty)
+					{
+						if (queue.TryDequeue(out string result))
+						{
+							Console.WriteLine(result);
+						}
+					}
+				});
 			}
+
+			/*
+			List<Task> requestTasks = new List<Task>();
+
+			for (int i = 0; i < 10; ++i)
+            {
+				requestTasks.Add(Task.Run(() =>
+				{
+					if (client.Connected())
+					{
+						client.Ping();
+						Thread.Sleep(1000);
+					}
+				}));
+
+				requestTasks.Add(Task.Run(() =>
+				{
+					if (client.Connected())
+					{
+						client.RequestLobbies();
+						Thread.Sleep(1000);
+					}
+				}));
+
+				requestTasks.Add(Task.Run(() =>
+				{
+					if (client.Connected())
+					{
+						client.RequestEnterLobby(0);
+						Thread.Sleep(1000);
+					}
+				}));
+			}
+
+			Task.WaitAll(requestTasks.ToArray());
+
+			requestTasks.Add(Task.Run(() =>
+			{
+				// 수신 큐 처리
+				while (!queue.IsEmpty)
+				{
+					if (queue.TryDequeue(out string result))
+					{
+						Console.WriteLine(result);
+					}
+				}
+			}));
+
+			Task.WaitAll(requestTasks.ToArray());
+			*/
+
 
 			// -- UDP connection --
 			//UdpConnection conn = new UdpConnection();
@@ -67,6 +128,6 @@ namespace RedNetwork
 			//}
 
 		}
-    }
+	}
 
 }
