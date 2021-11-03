@@ -26,19 +26,49 @@ namespace RedNetwork
 
 			int count = 100;
 
-			while(count-- > 0)
+			ConcurrentQueue<string> chatQueue = new ConcurrentQueue<string>();
+
+			Task.Run(() =>
+			{
+				Console.WriteLine("Chatting ..");
+				while (true)
+				{
+					Console.Write("> ");
+					string msg = Console.ReadLine();
+
+					if (msg.Contains("exit") || msg.Contains("quit"))
+					{
+						break;
+					}
+					else
+					{
+						chatQueue.Enqueue(msg);
+					}
+				}
+			});
+
+			while (count-- > 0)
             {
 				if (client.Connected())
 				{
-					client.Ping();
-					Thread.Sleep(500);
+                    // for TEST
+                    client.Ping();
+                    Thread.Sleep(500);
 
-					client.RequestLobbies();
-					Thread.Sleep(500);
+					if(true)
+                    {
+						client.RequestAllLobbies();
+						Thread.Sleep(500);
+						client.EnterLobby(0);
+						Thread.Sleep(500);
+					}
 
-					client.RequestEnterLobby(0);
-					Thread.Sleep(500);
-				}
+					if (chatQueue.TryDequeue(out string content))
+                    {
+						Console.WriteLine("Try to send " + content);
+						client.ChattingAll(content);
+                    }
+                }
 
 				Task.Run(() =>
 				{
