@@ -6,12 +6,13 @@ namespace RedNetwork
 {
     public static class LoginClient
     {
-        public static bool TryLogin(string id, string pwd, ref Dictionary<string, string> dict)
+        public static bool TryLogin(string ip, string id, string pwd, ref Dictionary<string, string> dict)
         {
             try
             {
                 HttpClient client = new HttpClient();
-                string uri = "http://localhost:8081/signin/";
+                //string uri = "http://localhost:8081/signin/";
+                string uri = "http://" + ip + ":8081/signin/";
                 client.BaseAddress = new Uri(uri);
 
                 HttpResponseMessage response = client.GetAsync(uri + $"{id}/{pwd}").Result;

@@ -12,152 +12,134 @@ namespace RedNetwork
     {
         static void Main(string[] args)
         {
-			// -- Login --
-			//Dictionary<string, string> resultDict = new Dictionary<string, string>();
-			//LoginClient.TryLogin("0", "1234", ref resultDict);
-			//Console.WriteLine($"id:{resultDict["id"]}");
-
-			// -- TCP connection --
-			
-			// -- Lobby --
-			ConcurrentQueue<string> queue = new ConcurrentQueue<string>();
-			LobbyClient client = new LobbyClient(ref queue);
-			client.Connect("127.0.0.1", 9000);
-
-			int count = 100;
-
-			ConcurrentQueue<string> chatQueue = new ConcurrentQueue<string>();
-
-			Task.Run(() =>
-			{
-				Console.WriteLine("Chatting ..");
-				while (true)
-				{
-					Console.Write("> ");
-					string msg = Console.ReadLine();
-
-					if (msg.Contains("exit") || msg.Contains("quit"))
-					{
-						break;
-					}
-					else
-					{
-						chatQueue.Enqueue(msg);
-					}
-				}
-			});
-
-			while (count-- > 0)
+            if(args.Length < 1)
             {
-				if (client.Connected())
-				{
-                    // for TEST
-                    client.Ping();
-                    Thread.Sleep(500);
+                Console.WriteLine("Entered ip address");
+                return;
+            }
 
-					if(true)
-                    {
-						client.RequestAllLobbies();
-						Thread.Sleep(500);
-						client.EnterLobby(0);
-						Thread.Sleep(500);
-					}
+            // -- Login --
+            Dictionary<string, string> resultDict = new Dictionary<string, string>();
+            string id, pwd;
+            Console.Write("ID: ");
+            id = Console.ReadLine();
+            Console.Write("PWD: ");
+            pwd = Console.ReadLine();
 
-					if (chatQueue.TryDequeue(out string content))
+            LoginClient.TryLogin(args[0], id, pwd, ref resultDict);
+            Console.WriteLine($"id:{resultDict["id"]}");
+
+            // -- TCP connection --
+            // -- LobbyClient --
+            ConcurrentQueue<string> queue = new ConcurrentQueue<string>();
+            LobbyClient client = new LobbyClient(resultDict["id"], ref queue);
+
+            client.Connect(args[0], 9000);
+            Thread.Sleep(1000);
+
+            if (!client.Connected())
+            {
+                Console.WriteLine("can't connect to server");
+                return;
+            }
+
+            Thread messageHandleThread = new Thread(() =>
+            {
+                int count = 5000;
+
+                while(count > 0)
+                {
+                    if (queue.TryDequeue(out string result))
                     {
-						Console.WriteLine("Try to send " + content);
-						client.ChattingAll(content);
+                        Console.WriteLine(result);
+                        count--;
+                    }
+                    
+                    if(!client.Connected())
+                    {
+                        break;
                     }
                 }
+            });
+            messageHandleThread.Start();
 
-				Task.Run(() =>
-				{
-					// 수신 큐 처리
-					while (!queue.IsEmpty)
-					{
-						if (queue.TryDequeue(out string result))
-						{
-							Console.WriteLine(result);
-						}
-					}
-				});
-			}
-
-			/*
-			List<Task> requestTasks = new List<Task>();
-
-			for (int i = 0; i < 10; ++i)
+            int count = 5000;
+            while (count-- > 0)
             {
-				requestTasks.Add(Task.Run(() =>
-				{
-					if (client.Connected())
-					{
-						client.Ping();
-						Thread.Sleep(1000);
-					}
-				}));
+                if (!client.Connected())
+                {
+                    break;
+                }
 
-				requestTasks.Add(Task.Run(() =>
-				{
-					if (client.Connected())
-					{
-						client.RequestLobbies();
-						Thread.Sleep(1000);
-					}
-				}));
+                Console.Write("Press enter, activate input mode: ");
+                int input = Console.Read();
 
-				requestTasks.Add(Task.Run(() =>
-				{
-					if (client.Connected())
-					{
-						client.RequestEnterLobby(0);
-						Thread.Sleep(1000);
-					}
-				}));
-			}
+                switch (input)
+                {
+                    case (int)ConsoleKey.Enter:
+                        {
+                            Console.Read();
+                            Console.WriteLine("InputMode activated ..");
+                            while (true)
+                            {
+                                Console.Write("> ");
 
-			Task.WaitAll(requestTasks.ToArray());
+                                string msg = Console.ReadLine();
 
-			requestTasks.Add(Task.Run(() =>
-			{
-				// 수신 큐 처리
-				while (!queue.IsEmpty)
-				{
-					if (queue.TryDequeue(out string result))
-					{
-						Console.WriteLine(result);
-					}
-				}
-			}));
+                                if (msg.Contains("exit") || msg.Contains("quit"))
+                                {
+                                    break;
+                                }
+                                else
+                                {
+                                    if (msg.Contains("Lobby"))
+                                    {
+                                        client.RequestAllLobbies();
+                                    }
+                                    else if (msg.Length > 0)
+                                    {
+                                        client.ChattingAll(msg);
+                                    }
+                                    else
+                                    {
+                                        continue;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    default:
+                        {
+                            break;
+                        }
+                }
+            }
 
-			Task.WaitAll(requestTasks.ToArray());
-			*/
+            messageHandleThread.Join();
 
+            // -- UDP connection --
+            //UdpConnection conn = new UdpConnection();
+            //conn.Update(1000 / 24);
+            //try
+            //{
+            //	UdpClient udpClient = new UdpClient("127.0.0.1", 12190);
+            //	//udpClient.Connect();
+            //	Socket socket = udpClient.Client;
+            //	if (socket.Connected)
+            //	{
+            //		int sent = socket.Send(Encoding.ASCII.GetBytes("Hello this is C# client!"));
+            //		Console.WriteLine("Message sent " + sent);
+            //		byte[] recv = new byte[128];
+            //		socket.Receive(recv);
+            //		Console.WriteLine("Message recv " + Encoding.ASCII.GetString(recv));
+            //	}
+            //}
+            //catch(Exception e)
+            //{
+            //	Console.WriteLine(e);
+            //}
 
-			// -- UDP connection --
-			//UdpConnection conn = new UdpConnection();
-			//conn.Update(1000 / 24);
-
-			//try
-			//{
-			//	UdpClient udpClient = new UdpClient("127.0.0.1", 12190);
-			//	//udpClient.Connect();
-			//	Socket socket = udpClient.Client;
-			//	if (socket.Connected)
-			//	{
-			//		int sent = socket.Send(Encoding.ASCII.GetBytes("Hello this is C# client!"));
-			//		Console.WriteLine("Message sent " + sent);
-			//		byte[] recv = new byte[128];
-			//		socket.Receive(recv);
-			//		Console.WriteLine("Message recv " + Encoding.ASCII.GetString(recv));
-			//	}
-			//}
-			//catch(Exception e)
-			//{
-			//	Console.WriteLine(e);
-			//}
-
-		}
-	}
+        }
+    }
 
 }

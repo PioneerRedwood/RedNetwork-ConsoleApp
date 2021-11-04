@@ -24,8 +24,9 @@ namespace RedNetwork
         //Stopwatch watch = new Stopwatch();
         bool isLobbiesInit = false;
 		public bool isInLobby = false;
+		public bool isInGroup = false;
 
-		string tempName = "Redwood";
+		string userName = "Redwood";
 
         enum MsgType : uint
 		{
@@ -56,7 +57,7 @@ namespace RedNetwork
 
 			// lobby chatting stuff ~ 3000
 			CHAT_ALL,
-			CHAT_GROUP,
+			CHAT_LOBBY,
 			CHAT_SPECIFIC,
 		}
 
@@ -77,8 +78,9 @@ namespace RedNetwork
 			public void SetMax(uint max) { this.max = max; }
         }
 		
-		public LobbyClient(ref ConcurrentQueue<string> queue)
+		public LobbyClient(string userName, ref ConcurrentQueue<string> queue)
 		{
+			this.userName = userName;
 			this.queue = queue;
 		}
 
@@ -87,6 +89,7 @@ namespace RedNetwork
 			return client.Connected;
 		}
 
+		ulong DEBUG_COUNT = 0;
 		public bool Connect(string address, int port)
 		{
 			try
@@ -110,7 +113,6 @@ namespace RedNetwork
 							}
 							else
 							{
-								//Debug.Log("Not connected .. exit");
 								result = false;
 							}
 						}), client);
@@ -122,9 +124,9 @@ namespace RedNetwork
 
 				return result;
 			}
-			catch (Exception)
+			catch (Exception e)
 			{
-				//Debug.Log(e);
+				Console.WriteLine(e);
 				return false;
 			}
 		}
@@ -179,11 +181,13 @@ namespace RedNetwork
 								SendUserInfo();
 
 								break;
-
 							}
 						case MsgType.HEARTBEAT:
-							//queue.Enqueue("HEARTBEATING " + networkId);
-							break;
+							{
+								//Console.Write($"{DEBUG_COUNT++} ");
+								//queue.Enqueue("HEARTBEATING " + networkId);
+								break;
+							}
 						case MsgType.LOBBY_INFO:
 							{
 								client.BeginReceive(readBuffer, 0, BufferSize, SocketFlags.None, new AsyncCallback(
@@ -201,15 +205,16 @@ namespace RedNetwork
 								break;
 							}
 						case MsgType.ALL_LOBBY_INFO:
-                            {
-								client.BeginReceive(readBuffer, 0, BufferSize, SocketFlags.None, new AsyncCallback(
+							{
+                                Console.Write($"{DEBUG_COUNT++} ");
+                                client.BeginReceive(readBuffer, 0, BufferSize, SocketFlags.None, new AsyncCallback(
 								(IAsyncResult ar) =>
 								{
 									int bytes = client.EndReceive(ar);
 									if (bytes > 0)
 									{
-										//Console.Write($"recv {bytes}");
-										queue.Enqueue(ParsingLobbyFromString(Encoding.Default.GetString(readBuffer, 0, bytes)));
+                                        //Console.Write($"recv {bytes}");
+                                        queue.Enqueue(ParsingLobbyFromString(Encoding.Default.GetString(readBuffer, 0, bytes)));
 									}
 								}), client);
 								break;
@@ -251,9 +256,27 @@ namespace RedNetwork
 								// 상세한 이유는 추후 추가할 예정
 								queue.Enqueue("Join lobby failed.. [already in]");
 								break;
-
 							}
+						case MsgType.CHAT_ALL:
+                            {
+								client.BeginReceive(readBuffer, 0, BufferSize, SocketFlags.None, new AsyncCallback(
+								(IAsyncResult ar) =>
+								{
+									int bytes = client.EndReceive(ar);
+									if (bytes > 0)
+									{
+										isInLobby = true;
 
+										//Console.WriteLine($"{bytes}: {Encoding.Default.GetString(readBuffer, 0, bytes)}");
+										string time = Encoding.Default.GetString(readBuffer, 0, 19);
+										string contents = Encoding.Default.GetString(readBuffer, 19, bytes);
+
+                                        queue.Enqueue(time + "\t" + contents);
+                                    }
+								}), client);
+
+								break;
+							}
 						default:
 							break;
 					}
@@ -272,6 +295,8 @@ namespace RedNetwork
 		}
 
 		// 주어진 문자열로부터 로비 정보를 파싱
+		// 2021-11-04 추가 -- 데이터를 빨리 보내면 여기서 파싱하는데에 오류가 날 수 있음
+		// 이에 대한 해결 방안은?
 		private string ParsingLobbyFromString(string data)
         {
 			StringBuilder sb = new StringBuilder();			
@@ -312,26 +337,11 @@ namespace RedNetwork
 			return sb.ToString();
 		}
 
-		// 문자열 서버에 전송 -- deprecated
-		public void Send(string msg)
-		{
-			try
-			{
-				if (client != null && client.Connected)
-				{
-					Buffer.BlockCopy(Encoding.Default.GetBytes(msg), 0, writeBuffer, 0, msg.Length);
-					Send(0, msg.Length);
-				}
-				else
-				{
-					isStarted = false;
-				}
-			}
-			catch (Exception)
-			{
-				isStarted = false;
-				return;
-			}
+		// 헤더 만들어서 0~size의 writeBuffer에 담긴 데이터 전송
+		// 메시지 타입, 데이터 크기, 데이터
+		private void Send(MsgType type, string data)
+        {
+			
 		}
 
 		// 시작 인덱스와 크기를 인자로 받아서 writeBuffer에 있는 데이터를 전송
@@ -374,7 +384,7 @@ namespace RedNetwork
 			Buffer.BlockCopy(BitConverter.GetBytes((uint)MsgType.CONNECTION_USER_INFO), 0, writeBuffer, 0, sizeof(uint));
 			size += sizeof(uint);
 
-			Buffer.BlockCopy(BitConverter.GetBytes(sizeof(uint) + sizeof(int) + tempName.Length), 0, writeBuffer, size, sizeof(int));
+			Buffer.BlockCopy(BitConverter.GetBytes(sizeof(uint) + sizeof(int) + userName.Length), 0, writeBuffer, size, sizeof(int));
 			size += sizeof(int);
 
 			// 메시지 바디
@@ -383,12 +393,12 @@ namespace RedNetwork
 			size += sizeof(uint);
 
 			// 이름 크기
-			Buffer.BlockCopy(BitConverter.GetBytes(tempName.Length), 0, writeBuffer, size, sizeof(int));
+			Buffer.BlockCopy(BitConverter.GetBytes(userName.Length), 0, writeBuffer, size, sizeof(int));
 			size += sizeof(int);
 
 			// 이름
-			Buffer.BlockCopy(Encoding.Default.GetBytes(tempName), 0, writeBuffer, size, tempName.Length);
-			size += tempName.Length;
+			Buffer.BlockCopy(Encoding.Default.GetBytes(userName), 0, writeBuffer, size, userName.Length);
+			size += userName.Length;
 
 			// 계정 정보 등등
 			Send(0, size);
@@ -443,22 +453,46 @@ namespace RedNetwork
 			Send(0, size);
 		}
 
-		// 전체 채팅
-		public void ChattingAll(string content)
+		// 접속한 전체 유저에게 채팅
+		public void ChattingAll(string data)
         {
+			// 헤더
+			int size = 0;
+			Buffer.BlockCopy(BitConverter.GetBytes((uint)MsgType.CHAT_ALL), 0, writeBuffer, 0, sizeof(uint));
+			size += sizeof(uint);
 
+			// 헤더 - 바디 사이즈
+			Buffer.BlockCopy(BitConverter.GetBytes(sizeof(uint) + data.Length), 0, writeBuffer, size, sizeof(uint));
+			size += sizeof(uint);
+
+			// 바디 사이즈
+			Buffer.BlockCopy(BitConverter.GetBytes(data.Length), 0, writeBuffer, size, sizeof(uint));
+			size += sizeof(uint);
+
+			// 바디 - 바디
+			Buffer.BlockCopy(Encoding.Default.GetBytes(data), 0, writeBuffer, size, data.Length);
+			size += data.Length;
+
+			Send(0, size);
+		}
+
+        // 동일한 로비 내 유저에게 채팅
+        public void ChattingLobby(string content)
+        {
+			if(isInLobby)
+            {
+				Send(MsgType.CHAT_LOBBY, content);
+            }
+            else
+            {
+				Console.WriteLine("You must get into a lobby first.");
+            }
         }
 
-		// 그룹 채팅
-		public void ChattingGroup(string content)
+		// 어떤 유저에게 개인 채팅 - 귓속말
+		public void ChattingPrivate(string content, uint user_id)
         {
-
-        }
-
-		// 개인 채팅
-		public void ChattingPrivate(string content)
-        {
-
+			// 귓속말 가능한 상태인지
         }
 	}
 }
