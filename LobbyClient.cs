@@ -9,6 +9,56 @@ using System.Diagnostics;
 
 namespace RedNetwork
 {
+	public struct Lobby
+	{
+		public uint idx;
+		public uint current;
+		public uint max;
+
+		public Lobby(uint idx, uint current, uint max)
+		{
+			this.idx = idx;
+			this.current = current;
+			this.max = max;
+		}
+
+		public void SetCurrent(uint current) { this.current = current; }
+		public void SetMax(uint max) { this.max = max; }
+	}
+
+	public enum MsgType : uint
+	{
+		// | 4bytes| 4bytes|--  ContentSize --|
+		// |MsgType|MsgSize|--- MsgContent ---|
+		// 만약 메시지 내용이 없는 메시지라고 해도
+		// 메시지의 크기를 전송해야 함!; bodyless msg
+
+		// networking core msg ~ 1000
+		HEARTBEAT,
+
+		ACCEPT_CONNECT,
+		SESSION_DISCONNECT,
+		CONNECTION_USER_INFO,
+
+		// lobby ~ 2000
+		LOBBY_INFO,
+		ALL_LOBBY_INFO,
+
+		JOIN_LOBBY,
+		JOIN_LOBBY_OK,
+		JOIN_LOBBY_FAIL_REJECTED,
+		JOIN_LOBBY_FAIL_NOSPACE,
+		JOIN_LOBBY_FAIL_NOTEXSISTS,
+		JOIN_LOBBY_FAIL_ALREADYIN,
+
+		NEW_JOINED_LOBBY,
+
+		// lobby chatting stuff ~ 3000
+		CHAT_ALL,
+		CHAT_LOBBY,
+		CHAT_PRIVATE,
+	}
+
 	class LobbyClient
 	{
 		uint networkId = uint.MaxValue;
@@ -19,70 +69,42 @@ namespace RedNetwork
 		byte[] writeBuffer = new byte[BufferSize];
 		byte[] readBuffer = new byte[BufferSize];
 		bool isStarted = false;
-		
+
 		List<Lobby> lobbies = new List<Lobby>();
         //Stopwatch watch = new Stopwatch();
-        bool isLobbiesInit = false;
+        public bool isLobbiesInit = false;
 		public bool isInLobby = false;
 		public bool isInGroup = false;
 
 		string userName = "Redwood";
 
-        enum MsgType : uint
-		{
-			// | 4bytes| 4bytes|--  ContentSize --|
-			// |MsgType|MsgSize|--- MsgContent ---|
-			// 만약 메시지 내용이 없는 메시지라고 해도
-			// 메시지의 크기를 전송해야 함!; bodyless msg
-
-			// networking core msg ~ 1000
-			HEARTBEAT,
-
-			ACCEPT_CONNECT,
-			SESSION_DISCONNECT,
-			CONNECTION_USER_INFO,
-
-			// lobby ~ 2000
-			LOBBY_INFO,
-			ALL_LOBBY_INFO,
-
-			JOIN_LOBBY,
-			JOIN_LOBBY_OK,
-			JOIN_LOBBY_FAIL_REJECTED,
-			JOIN_LOBBY_FAIL_NOSPACE,
-			JOIN_LOBBY_FAIL_NOTEXSISTS,
-			JOIN_LOBBY_FAIL_ALREADYIN,
-
-			NEW_JOINED_LOBBY,
-
-			// lobby chatting stuff ~ 3000
-			CHAT_ALL,
-			CHAT_LOBBY,
-			CHAT_SPECIFIC,
-		}
-
-		struct Lobby
-        {
-			public uint idx;
-			public uint current;
-			public uint max;
-
-			public Lobby(uint idx, uint current, uint max)
-            {
-				this.idx = idx;
-				this.current = current;
-				this.max = max;
-            }
-
-			public void SetCurrent(uint current) { this.current = current; }
-			public void SetMax(uint max) { this.max = max; }
-        }
-		
 		public LobbyClient(string userName, ref ConcurrentQueue<string> queue)
 		{
 			this.userName = userName;
 			this.queue = queue;
 		}
+
+		public List<Lobby> GetUpdatedLobbies()
+        {
+			return lobbies;
+        }
+
+		public bool CanJoinLobby(int idx)
+        {
+			if(lobbies.Count > idx - 1 && idx >= 0 && lobbies[idx].max < idx)
+            {
+				Console.WriteLine("wrong index");
+				return false;
+            }
+
+			if(lobbies[idx].current + 1 > lobbies[idx].max)
+            {
+				Console.WriteLine("The lobby is full");
+				return false;
+            }
+
+			return true;
+        }
 
 		public bool Connected()
 		{
@@ -131,6 +153,11 @@ namespace RedNetwork
 			}
 		}
 
+		public void Disconnect()
+        {
+			client.Close();
+        }
+		
 		private void ReceiveHeader()
 		{
 			try
@@ -206,7 +233,7 @@ namespace RedNetwork
 							}
 						case MsgType.ALL_LOBBY_INFO:
 							{
-                                Console.Write($"{DEBUG_COUNT++} ");
+                                //Console.Write($"{DEBUG_COUNT++} ");
                                 client.BeginReceive(readBuffer, 0, BufferSize, SocketFlags.None, new AsyncCallback(
 								(IAsyncResult ar) =>
 								{
@@ -259,6 +286,37 @@ namespace RedNetwork
 							}
 						case MsgType.CHAT_ALL:
                             {
+								// 먼저 읽을 크기를 받아옴
+								client.BeginReceive(readBuffer, 0, sizeof(uint), SocketFlags.None, new AsyncCallback(
+								(IAsyncResult ar) =>
+								{
+									int bytes = client.EndReceive(ar);
+									if (bytes > 0)
+									{
+										int readSize = BitConverter.ToInt32(readBuffer);
+										if (readSize > 0 && readSize < BufferSize)
+                                        {
+											client.BeginReceive(readBuffer, 0, readSize, SocketFlags.None, new AsyncCallback(
+											(IAsyncResult ar2) =>
+											{
+												int recv = client.EndReceive(ar2);
+												if (recv > 0)
+												{
+													string time = Encoding.Default.GetString(readBuffer, 0, 19);
+													string contents = Encoding.Default.GetString(readBuffer, 19, recv - 19);
+													Console.WriteLine(contents);
+
+													queue.Enqueue("[ALL] " + time + "\t" + contents);
+												}
+											}), client);
+										}
+									}
+								}), client);
+
+								break;
+							}
+						case MsgType.CHAT_LOBBY:
+                            {
 								client.BeginReceive(readBuffer, 0, BufferSize, SocketFlags.None, new AsyncCallback(
 								(IAsyncResult ar) =>
 								{
@@ -271,12 +329,18 @@ namespace RedNetwork
 										string time = Encoding.Default.GetString(readBuffer, 0, 19);
 										string contents = Encoding.Default.GetString(readBuffer, 19, bytes);
 
-                                        queue.Enqueue(time + "\t" + contents);
-                                    }
+										queue.Enqueue(time + " ALL\t\t" + contents);
+									}
 								}), client);
 
 								break;
-							}
+                            }
+						case MsgType.CHAT_PRIVATE:
+                            {
+								// 누구한테서 왔는지
+
+								break;
+                            }
 						default:
 							break;
 					}
@@ -318,10 +382,10 @@ namespace RedNetwork
 					uint current = (uint)int.Parse(lobby2[1].Split(countDelim)[0]);
 					uint max = (uint)int.Parse(lobby2[1].Split(countDelim)[1]);
 
-					//Console.WriteLine($"{lobbies.Count} #{idx} lobby info current: {current} max: {max}");
-                    //sb.AppendLine($"#{idx} lobby info current: {current} max: {max}");
+                    //Console.WriteLine($"{lobbies.Count} #{idx} lobby info current: {current} max: {max}");
+                    sb.AppendLine($"#{idx} lobby info current: {current} max: {max}");
 
-					if(!isLobbiesInit)
+                    if (!isLobbiesInit)
                     {
 						lobbies.Add(new Lobby(idx, current, max));
 					}
@@ -335,13 +399,6 @@ namespace RedNetwork
 
 			isLobbiesInit = true;
 			return sb.ToString();
-		}
-
-		// 헤더 만들어서 0~size의 writeBuffer에 담긴 데이터 전송
-		// 메시지 타입, 데이터 크기, 데이터
-		private void Send(MsgType type, string data)
-        {
-			
 		}
 
 		// 시작 인덱스와 크기를 인자로 받아서 writeBuffer에 있는 데이터를 전송
@@ -419,7 +476,7 @@ namespace RedNetwork
 		}
 
 		// 로비 접속 요청
-		public void EnterLobby(uint idx)
+		public void JoinLobby(uint idx)
         {
 			int size = 0;
 			Buffer.BlockCopy(BitConverter.GetBytes((uint)MsgType.JOIN_LOBBY), 0, writeBuffer, size, sizeof(MsgType));
@@ -456,6 +513,11 @@ namespace RedNetwork
 		// 접속한 전체 유저에게 채팅
 		public void ChattingAll(string data)
         {
+			if(data.Length < 1)
+            {
+				return;
+            }
+
 			// 헤더
 			int size = 0;
 			Buffer.BlockCopy(BitConverter.GetBytes((uint)MsgType.CHAT_ALL), 0, writeBuffer, 0, sizeof(uint));
@@ -481,7 +543,7 @@ namespace RedNetwork
         {
 			if(isInLobby)
             {
-				Send(MsgType.CHAT_LOBBY, content);
+				//Send(MsgType.CHAT_LOBBY, content);
             }
             else
             {

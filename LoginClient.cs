@@ -11,8 +11,8 @@ namespace RedNetwork
             try
             {
                 HttpClient client = new HttpClient();
-                //string uri = "http://localhost:8081/signin/";
-                string uri = "http://" + ip + ":8081/signin/";
+                string uri = "http://localhost:8081/signin/";
+                //string uri = "http://" + ip + ":8081/signin/";
                 client.BaseAddress = new Uri(uri);
 
                 HttpResponseMessage response = client.GetAsync(uri + $"{id}/{pwd}").Result;
@@ -20,7 +20,7 @@ namespace RedNetwork
                 {
                     string result = response.Content.ReadAsStringAsync().Result;
                     // 결과로 {"id":"0"}만 오기 때문에 기본적인 파싱만 진행
-                    Console.WriteLine(result);
+                    //Console.WriteLine(result);
                     result = result.Replace('{', ' ').Replace('}', ' ').Replace('\"', ' ').Replace('"', ' ').Trim();
                     
                     string[] splited1 = result.Split(':');
@@ -34,10 +34,10 @@ namespace RedNetwork
                     return false;
                 }                
             }
-            catch (Exception e)
+            catch (Exception)
             {
-                Console.WriteLine(e);
                 return false;
+
             }
         }
     }

@@ -10,27 +10,58 @@ namespace RedNetwork
 {
     class RedNetworkMain
     {
+        public enum ChattingMode : uint
+        {
+            ALL,
+            LOBBY,
+            SPECIFIC
+        }
+        public static void ClearCurrentConsoleLine()
+        {
+            int currentLineCursor = Console.CursorTop;
+            Console.SetCursorPosition(0, Console.CursorTop);
+            Console.Write(new string(' ', Console.WindowWidth));
+            Console.SetCursorPosition(0, currentLineCursor);
+        }
+
         static void Main(string[] args)
         {
-            if(args.Length < 1)
+            if (args.Length < 1)
             {
                 Console.WriteLine("Entered ip address");
-                return;
+                //return;
+                args = new string[1];
+                args[0] = "127.0.0.1";
             }
 
-            // -- Login --
-            Dictionary<string, string> resultDict = new Dictionary<string, string>();
-            string id, pwd;
-            Console.Write("ID: ");
-            id = Console.ReadLine();
-            Console.Write("PWD: ");
-            pwd = Console.ReadLine();
 
-            LoginClient.TryLogin(args[0], id, pwd, ref resultDict);
-            Console.WriteLine($"id:{resultDict["id"]}");
+            // -- Login --
+
+            Dictionary<string, string> resultDict = new Dictionary<string, string>();
+            resultDict.Add("id", "redwood");
+            /*
+            string id, pwd;
+
+            bool isLoginSuccess = false;
+
+            do
+            {
+                Console.Write("ID: ");
+                id = Console.ReadLine();
+                Console.Write("PWD: ");
+                pwd = Console.ReadLine();
+
+                isLoginSuccess = LoginClient.TryLogin(args[0], id, pwd, ref resultDict);
+                if(!isLoginSuccess)
+                {
+                    Console.WriteLine("Failed to Login");
+                }
+            } while (!isLoginSuccess);
+            */
+            // -- end Login --
 
             // -- TCP connection --
-            // -- LobbyClient --
+            // -- Lobby --
             ConcurrentQueue<string> queue = new ConcurrentQueue<string>();
             LobbyClient client = new LobbyClient(resultDict["id"], ref queue);
 
@@ -47,75 +78,229 @@ namespace RedNetwork
             {
                 int count = 5000;
 
-                while(count > 0)
+                while (count > 0)
                 {
                     if (queue.TryDequeue(out string result))
                     {
                         Console.WriteLine(result);
                         count--;
                     }
-                    
-                    if(!client.Connected())
+
+                    if (!client.Connected())
                     {
                         break;
                     }
                 }
             });
-            messageHandleThread.Start();
-
-            int count = 5000;
-            while (count-- > 0)
+            
             {
-                if (!client.Connected())
+                // 2021-11-05 입력 스레드 만들어봤는데 원하는대로 작동하지 않아서 폐기
+                /*Thread inputTread = new Thread(() =>
                 {
-                    break;
-                }
-
-                Console.Write("Press enter, activate input mode: ");
-                int input = Console.Read();
-
-                switch (input)
-                {
-                    case (int)ConsoleKey.Enter:
+                    uint modeIdx = 1;
+                    int count = 5000;
+                    while (count-- > 0)
+                    {
+                        if (!client.Connected())
                         {
-                            Console.Read();
-                            Console.WriteLine("InputMode activated ..");
-                            while (true)
+                            break;
+                        }
+                        bool isinputActivated;
+                        string msg;
+                        while (true)
+                        {
+                            msg = "";
+                            isinputActivated = true;
+                            //Console.Write(mode.ToString().Trim() + "> ");
+                            ConsoleKeyInfo keyinfo = Console.ReadKey();
+
+                            switch (keyinfo.Key)
                             {
-                                Console.Write("> ");
+                                case ConsoleKey.Enter:
+                                    {
+                                        Console.WriteLine();
+                                        isinputActivated = false;
+                                        break;
+                                    }
+                                case ConsoleKey.Tab:
+                                    {
+                                        modeIdx++;
+                                        mode = (ChattingMode)(modeIdx %= 3);
 
-                                string msg = Console.ReadLine();
+                                        ClearCurrentConsoleLine();
+                                        Console.Write(mode.ToString().Trim() + "> ");
+                                        break;
+                                    }
+                                case ConsoleKey.Backspace:
+                                    {
+                                        if ((Console.CursorLeft < 5 && mode == ChattingMode.ALL) ||
+                                        (Console.CursorLeft < 7 && mode == ChattingMode.LOBBY) ||
+                                        (Console.CursorLeft < 10 && mode == ChattingMode.SPECIFIC))
+                                        {
+                                            Console.Write(" ");
+                                            continue;
+                                        }
+                                        break;
+                                    }
+                                default:
+                                    {
+                                        msg += keyinfo.KeyChar;
+                                        break;
+                                    }
+                            }
 
-                                if (msg.Contains("exit") || msg.Contains("quit"))
+                            if(!isinputActivated)
+                            {
+                                break;
+                            }
+                        }
+
+                        if (msg.Contains("exit") || msg.Contains("quit"))
+                        {
+                            break;
+                        }
+                        else
+                        {
+                            // search all lobby
+                            if (msg.Equals("sal"))
+                            {
+                                client.RequestAllLobbies();
+                            }
+                            // sl
+                            else if (msg.Contains("sl"))
+                            {
+                                client.RequestLobbyByIndex((uint)int.Parse(msg.Split(' ')[1]));
+                            }
+                            // jl 1
+                            else if (msg.Contains("jl"))
+                            {
+                                client.JoinLobby((uint)int.Parse(msg.Split(' ')[1]));
+                            }
+                            else
+                            {
+                                client.ChattingAll(msg);
+                            }
+                        }
+                    }
+                });
+                inputTread.Start();
+
+                inputTread.Join();
+                messageHandleThread.Join();
+                */
+            }
+            Thread thr1 = new Thread(() =>
+            {
+                bool isExitPressed = false;
+                while (!isExitPressed)
+                {
+                    Console.WriteLine("Press Key\n[M: show user info], [F: search lobbies], [J: join lobby]\n" +
+                    "[C: chatting all], [L: chatting lobby(you must be in specific lobby)], [W: whisper someone]\n" +
+                    "[Q: exit program]");
+                    ConsoleKeyInfo key = Console.ReadKey();
+                    Console.WriteLine();
+                    switch (key.Key)
+                    {
+                        case ConsoleKey.M:
+                            {
+                                Console.WriteLine($"Player info id: {resultDict["id"]}");
+                                break;
+                            }
+                        case ConsoleKey.F:
+                            {
+                                client.RequestAllLobbies();
+                                break;
+                            }
+                        case ConsoleKey.J:
+                            {
+                                if(!client.isLobbiesInit)
                                 {
+                                    Console.WriteLine("You must update lobby first");
                                     break;
+                                }
+
+                                foreach (Lobby lobby in client.GetUpdatedLobbies())
+                                {
+                                    Console.Write(lobby.idx + " ");
+                                }
+
+                                int num = -1;
+                                Console.Write("\nnumber to join: ");
+                                try
+                                {
+                                    num = int.Parse(Console.ReadLine());
+                                }
+                                catch
+                                {
+                                    Console.WriteLine($"please enter the range of lobbies");
+                                    break;
+                                }
+
+                                //num = Console.ReadKey() - '0';
+                                Console.WriteLine(num);
+
+                                if (client.CanJoinLobby(num))
+                                {
+                                    client.JoinLobby((uint)num);
                                 }
                                 else
                                 {
-                                    if (msg.Contains("Lobby"))
-                                    {
-                                        client.RequestAllLobbies();
-                                    }
-                                    else if (msg.Length > 0)
-                                    {
-                                        client.ChattingAll(msg);
-                                    }
-                                    else
-                                    {
-                                        continue;
-                                    }
+                                    Console.WriteLine($"can't join {num} lobby");
                                 }
+                                break;
                             }
-                            break;
-                        }
-                    default:
-                        {
-                            break;
-                        }
+                        case ConsoleKey.C:
+                            {
+                                Console.Write("> ");
+                                client.ChattingAll(Console.ReadLine());
+
+                                break;
+                            }
+                        case ConsoleKey.L:
+                            {
+                                if (client.isInLobby)
+                                {
+                                    Console.Write("> ");
+                                    client.ChattingLobby(Console.ReadLine());
+                                }
+                                else
+                                {
+                                    Console.WriteLine("You must be in specific lobby");
+                                }
+                                break;
+                            }
+                        case ConsoleKey.W:
+                            {
+
+                                Console.WriteLine("can't do this yet");
+                                // P
+                                //Console.Write("select to send: ");
+
+
+                                //Console.Write("> ");
+                                //client.ChattingPrivate(Console.ReadLine());
+
+                                break;
+                            }
+                        case ConsoleKey.Q:
+                            {
+                                isExitPressed = true;
+                                client.Disconnect();
+                                break;
+                            }
+                    }
                 }
-            }
+
+
+            });
+
+            messageHandleThread.Start();
+            thr1.Start();
+            thr1.Join();
 
             messageHandleThread.Join();
+
+            // -- end Lobby --
 
             // -- UDP connection --
             //UdpConnection conn = new UdpConnection();
