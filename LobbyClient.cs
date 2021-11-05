@@ -249,13 +249,13 @@ namespace RedNetwork
 						case MsgType.JOIN_LOBBY_OK:
                             {
 								queue.Enqueue("Join lobby success..!");
-                                client.BeginReceive(readBuffer, 0, sizeof(uint), SocketFlags.None, new AsyncCallback(
-                                    (IAsyncResult ar) =>
-                                    {
-                                        int bytes = client.EndReceive(ar);
+								client.BeginReceive(readBuffer, 0, sizeof(uint), SocketFlags.None, new AsyncCallback(
+									(IAsyncResult ar) =>
+									{
+										int bytes = client.EndReceive(ar);
 										RequestLobbyByIndex(BitConverter.ToUInt32(readBuffer));
-                                    }), client);
-                                break;
+									}), client);
+								break;
 							}
 						case MsgType.JOIN_LOBBY_FAIL_REJECTED:
                             {
